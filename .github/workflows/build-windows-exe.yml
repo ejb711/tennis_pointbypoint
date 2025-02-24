@@ -18,13 +18,12 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-        cache: 'pip'
-        cache-dependency-path: 'requirements.txt'
+        # Cache parameter removed to avoid requirements.txt issue
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller numpy pandas matplotlib scipy tqdm
+        pip install numpy pandas matplotlib scipy tqdm pyinstaller
 
     - name: Create resource_path.py helper file
       shell: cmd
