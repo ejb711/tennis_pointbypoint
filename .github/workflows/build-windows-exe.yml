@@ -24,65 +24,37 @@ jobs:
         python -m pip install --upgrade pip
         pip install numpy pandas matplotlib scipy tqdm pyinstaller
 
-    - name: List files to debug
-      run: |
-        dir
-        dir current_app
-
     - name: Create resource_path.py
       run: |
-        echo 'import os' > resource_path.py
-        echo 'import sys' >> resource_path.py
-        echo '' >> resource_path.py
-        echo 'def resource_path(relative_path):' >> resource_path.py
-        echo '    """Get absolute path to resource, works for dev and for PyInstaller"""' >> resource_path.py
-        echo '    try:' >> resource_path.py
-        echo '        # PyInstaller creates a temp folder and stores path in _MEIPASS' >> resource_path.py
-        echo '        base_path = sys._MEIPASS' >> resource_path.py
-        echo '    except Exception:' >> resource_path.py
-        echo '        base_path = os.path.abspath(".")' >> resource_path.py
-        echo '' >> resource_path.py
-        echo '    return os.path.join(base_path, relative_path)' >> resource_path.py
+        echo import os > resource_path.py
+        echo import sys >> resource_path.py
+        echo. >> resource_path.py
+        echo def resource_path(relative_path): >> resource_path.py
+        echo     """Get absolute path to resource, works for dev and for PyInstaller""" >> resource_path.py
+        echo     try: >> resource_path.py
+        echo         # PyInstaller creates a temp folder and stores path in _MEIPASS >> resource_path.py
+        echo         base_path = sys._MEIPASS >> resource_path.py
+        echo     except Exception: >> resource_path.py
+        echo         base_path = os.path.abspath(".") >> resource_path.py
+        echo. >> resource_path.py
+        echo     return os.path.join(base_path, relative_path) >> resource_path.py
 
-    - name: Create helper script
+    - name: Copy monty_detailed.py to app.py
+      working-directory: current_app
       run: |
-        echo 'import os, re, glob' > helper.py
-        echo 'print("Current directory:", os.getcwd())' >> helper.py
-        echo 'print("Files in current directory:", os.listdir("."))' >> helper.py
-        echo 'if os.path.exists("current_app"):' >> helper.py
-        echo '    print("Files in current_app directory:", os.listdir("current_app"))' >> helper.py
-        echo 'else:' >> helper.py
-        echo '    print("current_app directory does not exist")' >> helper.py
-        echo '    # Try to find app.py in any directory' >> helper.py
-        echo '    app_files = glob.glob("**/*.py", recursive=True)' >> helper.py
-        echo '    print("Python files found:", app_files)' >> helper.py
-        echo 'with open("resource_path.py", "r") as f:' >> helper.py
-        echo '    resource_func = f.read()' >> helper.py
-        echo '# Try different potential locations for app.py' >> helper.py
-        echo 'potential_paths = ["current_app/app.py", "current_app/monty.py", "current_app/monty_detailed.py"]' >> helper.py
-        echo 'for path in potential_paths:' >> helper.py
-        echo '    if os.path.exists(path):' >> helper.py
-        echo '        app_path = path' >> helper.py
-        echo '        print(f"Found Python file at: {app_path}")' >> helper.py
-        echo '        with open(app_path, "r") as f:' >> helper.py
-        echo '            content = f.read()' >> helper.py
-        echo '        patched_content = resource_func + "\n\n" + content' >> helper.py
-        echo '        patched_content = re.sub(r"df = pd\\.read_csv\\(\'combined\\.csv\'\\)", "df = pd.read_csv(resource_path(\'combined.csv\'))", patched_content)' >> helper.py
-        echo '        with open(app_path, "w") as f:' >> helper.py
-        echo '            f.write(patched_content)' >> helper.py
-        echo '        print(f"Successfully modified {app_path}")' >> helper.py
-        echo '        # Create a copy named app.py if it wasn\'t already' >> helper.py
-        echo '        if app_path != "current_app/app.py":' >> helper.py
-        echo '            with open("current_app/app.py", "w") as f:' >> helper.py
-        echo '                f.write(patched_content)' >> helper.py
-        echo '            print("Created app.py copy for PyInstaller")' >> helper.py
-        echo '        break' >> helper.py
-        echo 'else:' >> helper.py
-        echo '    print("No suitable Python file found")' >> helper.py
-        echo '    exit(1)' >> helper.py
+        copy monty_detailed.py app.py
 
-    - name: Run helper script
-      run: python helper.py
+    - name: Prepend resource_path function to app.py
+      working-directory: current_app
+      run: |
+        copy /b ..\resource_path.py+app.py app_temp.py
+        move /y app_temp.py app.py
+
+    - name: Update CSV path in app.py
+      working-directory: current_app
+      shell: powershell
+      run: |
+        (Get-Content app.py) -replace "df = pd\.read_csv\('combined\.csv'\)", "df = pd.read_csv(resource_path('combined.csv'))" | Set-Content app.py
 
     - name: Build with PyInstaller
       working-directory: current_app
