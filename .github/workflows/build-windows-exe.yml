@@ -18,42 +18,47 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-        # Cache parameter removed to avoid requirements.txt issue
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install numpy pandas matplotlib scipy tqdm pyinstaller
 
-    - name: Create resource_path.py helper file
-      shell: cmd
-      run: |
-        echo import os > resource_path.py
-        echo import sys >> resource_path.py
-        echo. >> resource_path.py
-        echo def resource_path(relative_path): >> resource_path.py
-        echo     """Get absolute path to resource, works for dev and for PyInstaller""" >> resource_path.py
-        echo     try: >> resource_path.py
-        echo         # PyInstaller creates a temp folder and stores path in _MEIPASS >> resource_path.py
-        echo         base_path = sys._MEIPASS >> resource_path.py
-        echo     except Exception: >> resource_path.py
-        echo         base_path = os.path.abspath(".") >> resource_path.py
-        echo. >> resource_path.py
-        echo     return os.path.join(base_path, relative_path) >> resource_path.py
-
-    - name: Create modified app.py
-      shell: cmd
-      working-directory: current_app
-      run: |
-        copy ..\resource_path.py + app.py app_temp.py
-        move /y app_temp.py app.py
-        type app.py
-
-    - name: Modify CSV loading in app.py
+    - name: Prepare app.py
       shell: powershell
       working-directory: current_app
       run: |
-        (Get-Content app.py) -replace "df = pd\.read_csv\('combined\.csv'\)", "df = pd.read_csv(resource_path('combined.csv'))" | Set-Content app.py
+        # Create temporary file with resource_path function
+        $resourcePath = @"
+import os
+import sys
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+"@
+
+        # Read the current app.py content
+        $appContent = Get-Content -Raw app.py
+        
+        # Create a new file with resource_path function followed by original content
+        Set-Content -Path app_modified.py -Value "$resourcePath`n$appContent"
+        
+        # Replace CSV loading line
+        (Get-Content app_modified.py) -replace "df = pd\.read_csv\('combined\.csv'\)", "df = pd.read_csv(resource_path('combined.csv'))" | Set-Content app_modified.py
+        
+        # Display first 50 lines for debugging
+        Get-Content app_modified.py -TotalCount 50
+        
+        # Rename to app.py
+        Move-Item -Force app_modified.py app.py
 
     - name: Build with PyInstaller
       working-directory: current_app
