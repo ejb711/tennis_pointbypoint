@@ -24,41 +24,22 @@ jobs:
         python -m pip install --upgrade pip
         pip install numpy pandas matplotlib scipy tqdm pyinstaller
 
-    - name: Prepare app.py
-      shell: powershell
-      working-directory: current_app
+    - name: Create patch script
       run: |
-        # Create temporary file with resource_path function
-        $resourcePath = @"
-import os
-import sys
+        echo import os, sys, re > patch_app.py
+        echo def add_resource_path(app_path): >> patch_app.py
+        echo     with open(app_path, 'r') as f: >> patch_app.py
+        echo         content = f.read() >> patch_app.py
+        echo     resource_func = '''import os\nimport sys\n\ndef resource_path(relative_path):\n    """Get absolute path to resource, works for dev and for PyInstaller"""\n    try:\n        # PyInstaller creates a temp folder and stores path in _MEIPASS\n        base_path = sys._MEIPASS\n    except Exception:\n        base_path = os.path.abspath(".")\n\n    return os.path.join(base_path, relative_path)\n''' >> patch_app.py
+        echo     patched_content = resource_func + "\n\n" + content >> patch_app.py
+        echo     patched_content = re.sub(r"df = pd\.read_csv\('combined\.csv'\)", "df = pd.read_csv(resource_path('combined.csv'))", patched_content) >> patch_app.py
+        echo     with open(app_path, 'w') as f: >> patch_app.py
+        echo         f.write(patched_content) >> patch_app.py
+        echo if __name__ == '__main__': >> patch_app.py
+        echo     add_resource_path('current_app/app.py') >> patch_app.py
 
-def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller"""
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-
-    return os.path.join(base_path, relative_path)
-
-"@
-
-        # Read the current app.py content
-        $appContent = Get-Content -Raw app.py
-        
-        # Create a new file with resource_path function followed by original content
-        Set-Content -Path app_modified.py -Value "$resourcePath`n$appContent"
-        
-        # Replace CSV loading line
-        (Get-Content app_modified.py) -replace "df = pd\.read_csv\('combined\.csv'\)", "df = pd.read_csv(resource_path('combined.csv'))" | Set-Content app_modified.py
-        
-        # Display first 50 lines for debugging
-        Get-Content app_modified.py -TotalCount 50
-        
-        # Rename to app.py
-        Move-Item -Force app_modified.py app.py
+    - name: Patch app.py
+      run: python patch_app.py
 
     - name: Build with PyInstaller
       working-directory: current_app
