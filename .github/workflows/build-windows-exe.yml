@@ -33,7 +33,7 @@ jobs:
         if ($content -notmatch "def resource_path\(") {
           # Create the insertion content
           $insertion = @"
-        
+          
 import os
 import sys
 
