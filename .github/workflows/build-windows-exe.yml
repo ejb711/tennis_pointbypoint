@@ -61,7 +61,7 @@ jobs:
         pyinstaller --onefile --add-data "combined.csv;." app.py --name "TennisPointByPoint"
 
     - name: Upload executable
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: TennisPointByPoint
         path: current_app/dist/TennisPointByPoint.exe
