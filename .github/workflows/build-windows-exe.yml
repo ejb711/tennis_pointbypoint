@@ -24,46 +24,37 @@ jobs:
         python -m pip install --upgrade pip
         pip install numpy pandas matplotlib scipy tqdm pyinstaller
 
-    - name: Modify app.py
+    - name: Create resource_path.py
       run: |
-        python -c "
-        import os, re
-        
-        # Define the resource_path function to add
-        resource_func = '''
-import os
-import sys
+        echo 'import os' > resource_path.py
+        echo 'import sys' >> resource_path.py
+        echo '' >> resource_path.py
+        echo 'def resource_path(relative_path):' >> resource_path.py
+        echo '    """Get absolute path to resource, works for dev and for PyInstaller"""' >> resource_path.py
+        echo '    try:' >> resource_path.py
+        echo '        # PyInstaller creates a temp folder and stores path in _MEIPASS' >> resource_path.py
+        echo '        base_path = sys._MEIPASS' >> resource_path.py
+        echo '    except Exception:' >> resource_path.py
+        echo '        base_path = os.path.abspath(".")' >> resource_path.py
+        echo '' >> resource_path.py
+        echo '    return os.path.join(base_path, relative_path)' >> resource_path.py
 
-def resource_path(relative_path):
-    \"\"\"Get absolute path to resource, works for dev and for PyInstaller\"\"\"
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath('.')
+    - name: Create helper script
+      run: |
+        echo 'import os, re' > helper.py
+        echo 'with open("resource_path.py", "r") as f:' >> helper.py
+        echo '    resource_func = f.read()' >> helper.py
+        echo 'app_path = os.path.join("current_app", "app.py")' >> helper.py
+        echo 'with open(app_path, "r") as f:' >> helper.py
+        echo '    content = f.read()' >> helper.py
+        echo 'patched_content = resource_func + "\n\n" + content' >> helper.py
+        echo 'patched_content = re.sub(r"df = pd\\.read_csv\\(\'combined\\.csv\'\\)", "df = pd.read_csv(resource_path(\'combined.csv\'))", patched_content)' >> helper.py
+        echo 'with open(app_path, "w") as f:' >> helper.py
+        echo '    f.write(patched_content)' >> helper.py
+        echo 'print("Successfully modified app.py")' >> helper.py
 
-    return os.path.join(base_path, relative_path)
-'''
-        
-        # Read the current app.py content
-        app_path = os.path.join('current_app', 'app.py')
-        with open(app_path, 'r') as f:
-            content = f.read()
-        
-        # Add the resource_path function at the beginning
-        patched_content = resource_func + '\n\n' + content
-        
-        # Replace the CSV loading pattern
-        patched_content = re.sub(r\"df = pd\\.read_csv\\('combined\\.csv'\\)\", 
-                               \"df = pd.read_csv(resource_path('combined.csv'))\", 
-                               patched_content)
-        
-        # Write the modified content back
-        with open(app_path, 'w') as f:
-            f.write(patched_content)
-        
-        print('Successfully modified app.py')
-        "
+    - name: Run helper script
+      run: python helper.py
 
     - name: Build with PyInstaller
       working-directory: current_app
