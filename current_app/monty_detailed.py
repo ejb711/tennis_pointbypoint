@@ -7,10 +7,8 @@ This version additionally computes the ROI of each bet in the progression,
 saves a CSV breakdown of all bets from the final simulation, and supports
 interactive step-by-step user input (or auto-run) for each bet.
 
-Now, the global configuration is accepted as user input when the file is executed.
-Default values are shown in brackets; press Enter to accept the default.
-
-Global config includes:
+Now, the global configuration is accepted as user input when the file is executed,
+including:
 - INITIAL_BANKROLL
 - INITIAL_STAKE
 - SERVER_ODDS
@@ -20,7 +18,12 @@ Global config includes:
 - GAMES_PER_SIMULATION
 - SERVER_BET_MULTIPLIER
 - RECEIVER_BET_MULTIPLIER
-- AUTO_MODE (a toggle for interactive or automatic betting steps)
+- INITIAL_SEQUENCE (default "SSSRRR")
+- TIE_FAVORED (default "S")
+- ADVANTAGE_FAVORED (default "A")
+- AUTO_MODE (toggle for interactive or automatic)
+
+If the user presses Enter at a prompt, the default value is used.
 """
 
 import numpy as np
@@ -37,7 +40,7 @@ from tqdm import tqdm  # progress bar library
 def prompt_for_float(param_name, default_val):
     """
     Prompts the user for a float value. If the user presses Enter, we return the default.
-    Otherwise, we parse the user input as a float.
+    Otherwise, parse the user input as a float.
     """
     user_input = input(f"Enter {param_name} [default: {default_val}]: ").strip()
     if user_input == "":
@@ -48,7 +51,7 @@ def prompt_for_float(param_name, default_val):
 def prompt_for_int(param_name, default_val):
     """
     Prompts the user for an integer value. If the user presses Enter, we return the default.
-    Otherwise, we parse the user input as an integer.
+    Otherwise, parse the user input as an integer.
     """
     user_input = input(f"Enter {param_name} [default: {default_val}]: ").strip()
     if user_input == "":
@@ -56,21 +59,15 @@ def prompt_for_int(param_name, default_val):
     else:
         return int(user_input)
 
-def prompt_for_bool(param_name, default_val):
+def prompt_for_string(param_name, default_val):
     """
-    Prompts the user for a boolean value (y/n). If user presses Enter, we return the default.
-    Otherwise, parse 'y' or 'n'. 
-    (In this code, we won't actually prompt for AUTO_MODE, but shown here as an example.)
+    Prompts the user for a string value. If user presses Enter, returns the default.
     """
-    user_input = input(f"Enter {param_name} [default: {default_val}]: ").strip().lower()
+    user_input = input(f"Enter {param_name} [default: {default_val}]: ").strip()
     if user_input == "":
         return default_val
-    elif user_input in ["y", "yes", "true"]:
-        return True
-    elif user_input in ["n", "no", "false"]:
-        return False
     else:
-        return default_val
+        return user_input
 
 ###############################################################################
 # Global Configuration (defaults, overridden by user input in main)
@@ -87,6 +84,15 @@ GAMES_PER_SIMULATION = 1000
 # Bet multipliers for progression
 SERVER_BET_MULTIPLIER = 3.0
 RECEIVER_BET_MULTIPLIER = 2.0
+
+# Initial betting sequence
+INITIAL_SEQUENCE = "SSSRRR"
+
+# Tie favored pick
+TIE_FAVORED = "S"  # default to server when tied
+
+# Advantage favored pick: 'A' means bet on advantage side; 'S' means server always; 'R' means receiver always
+ADVANTAGE_FAVORED = "A"
 
 AUTO_MODE = False  # If False, user will step through bets interactively
 
@@ -187,13 +193,9 @@ class SessionAnalytics:
 # Utility Functions
 ###############################################################################
 def format_currency(amount):
-    """
-    Formats currency with color-coding to improve readability of financial outcomes.
-    Remove ANSI codes if you want to avoid glyph warnings.
-    """
-    if amount > 0:
+    if amount>0:
         return f"\033[92m${amount:,.2f}\033[0m"
-    elif amount < 0:
+    elif amount<0:
         return f"\033[91m${amount:,.2f}\033[0m"
     return f"${amount:,.2f}"
 
@@ -208,14 +210,14 @@ def calculate_next_bet(current_bet, next_pick, previous_pick, bankroll):
     else:
         next_bet = current_bet * RECEIVER_BET_MULTIPLIER
         
-    max_allowed = min(bankroll / 2, MAX_BET_ABSOLUTE)
+    max_allowed = min(bankroll/2, MAX_BET_ABSOLUTE)
     return min(next_bet, max_allowed)
 
 def is_tiebreak(game_str):
     return '/' in game_str
 
 def evaluate_point(point, pick):
-    if pick == 'S':
+    if pick=='S':
         return point in ['S','A']
     else:
         return point in ['R','D']
@@ -226,7 +228,7 @@ def process_game_points(game_str):
     return [p for p in game_str if p in ['S','A','R','D']]
 
 def calculate_profit(stake, odds):
-    if odds > 0:
+    if odds>0:
         return stake*(odds/100)
     else:
         return stake*(100/abs(odds))
@@ -276,7 +278,7 @@ def display_bet_info(bet_number, match_info, game_str, current_point, points_pla
     print(f"\nBetting Information:")
     print(f"Strategy: {strategy_type}")
     print(f"Stake Amount: {format_currency(stake)}")
-    print(f"Betting On: {'Server' if pick == 'S' else 'Receiver'}")
+    print(f"Betting On: {'Server' if pick=='S' else 'Receiver'}")
     print(f"Odds: {SERVER_ODDS if pick=='S' else RECEIVER_ODDS}")
     
     print(f"\nBankroll Status:")
@@ -310,7 +312,9 @@ def display_bet_result(won_bet, profit, bankroll, peak, max_drawdown, move_to_ne
 # Main Simulation Logic
 ###############################################################################
 def simulate_interactive_betting(df, initial_stake=1):
-    global AUTO_MODE
+    global AUTO_MODE, INITIAL_BANKROLL, INITIAL_SEQUENCE
+    global TIE_FAVORED, ADVANTAGE_FAVORED
+    
     bankroll = INITIAL_BANKROLL
     peak = bankroll
     max_drawdown = 0
@@ -329,6 +333,9 @@ def simulate_interactive_betting(df, initial_stake=1):
         'score_based_wins': 0,
         'tiebreaks_skipped': 0
     }
+    
+    # Convert the user-defined initial sequence into a list
+    progression_list = list(INITIAL_SEQUENCE)
     
     for _, match in df.iterrows():
         if bankroll <= 0:
@@ -363,7 +370,9 @@ def simulate_interactive_betting(df, initial_stake=1):
                 previous_pick = None
                 points_played = 0
                 using_score_strategy = False
-                strategy_picks = ['S','S','S','R','R','R']
+                # Make a local copy of progression_list for each game
+                # Actually, we only need to track how many picks we've used so far
+                # If we exhaust progression_list, switch to score-based
                 current_sequence = 0
                 
                 while points_played < len(points):
@@ -372,16 +381,26 @@ def simulate_interactive_betting(df, initial_stake=1):
                     
                     # Decide pick
                     if not using_score_strategy:
-                        if current_sequence >= len(strategy_picks):
+                        if current_sequence >= len(progression_list):
+                            # Switch to score-based
                             using_score_strategy = True
                         else:
-                            pick = strategy_picks[current_sequence]
+                            pick = progression_list[current_sequence]
                     
                     if using_score_strategy:
                         if game_state.is_score_tied():
-                            pick = 'S'
+                            # If tied, user-chosen TIE_FAVORED (default 'S')
+                            pick = TIE_FAVORED
                         else:
-                            pick = game_state.get_advantage_pick()
+                            if ADVANTAGE_FAVORED == "A":
+                                pick = game_state.get_advantage_pick()
+                            else:
+                                # If user sets ADVANTAGE_FAVORED to 'S' or 'R'
+                                pick = ADVANTAGE_FAVORED
+                    
+                    if not using_score_strategy:
+                        # Only increment sequence if we haven't switched to score-based
+                        pass
                     
                     if previous_pick is not None:
                         current_stake = calculate_next_bet(current_stake, pick, previous_pick, bankroll)
@@ -449,7 +468,7 @@ def simulate_interactive_betting(df, initial_stake=1):
                         analytics.record_bet(bet_record)
                         
                         if not using_score_strategy:
-                            current_sequence += 1
+                            current_sequence += 1  # Move to next pick in progression
                         
                         peak = max(peak, bankroll)
                         max_drawdown = max(max_drawdown, peak - bankroll)
@@ -459,7 +478,6 @@ def simulate_interactive_betting(df, initial_stake=1):
                     previous_pick = pick
                     points_played += 1
                     
-                    # Check if user wants to quit or go auto
                     if check_user_input():
                         return bankroll, peak, max_drawdown, session_stats, analytics
         
@@ -627,7 +645,9 @@ def generate_detailed_analytics_report(analytics, session_stats, output_file="mo
 def main():
     global INITIAL_BANKROLL, INITIAL_STAKE, SERVER_ODDS, RECEIVER_ODDS
     global MAX_BET_ABSOLUTE, MONTE_CARLO_SIMULATIONS, GAMES_PER_SIMULATION
-    global AUTO_MODE, SERVER_BET_MULTIPLIER, RECEIVER_BET_MULTIPLIER
+    global SERVER_BET_MULTIPLIER, RECEIVER_BET_MULTIPLIER
+    global INITIAL_SEQUENCE, TIE_FAVORED, ADVANTAGE_FAVORED
+    global AUTO_MODE
     
     # Prompt user for global config
     print("=== Configuration Setup ===")
@@ -642,10 +662,9 @@ def main():
     SERVER_BET_MULTIPLIER = prompt_for_float("Server Bet Multiplier", SERVER_BET_MULTIPLIER)
     RECEIVER_BET_MULTIPLIER = prompt_for_float("Receiver Bet Multiplier", RECEIVER_BET_MULTIPLIER)
     
-    # (Optional) ask if we want to start in auto mode
-    # user_auto = input(f"Start in auto mode? [default: {AUTO_MODE}] (y/n): ").strip().lower()
-    # if user_auto == "y":
-    #     AUTO_MODE = True
+    INITIAL_SEQUENCE = prompt_for_string("Initial Betting Sequence (e.g. SSSRRR)", INITIAL_SEQUENCE)
+    TIE_FAVORED = prompt_for_string("Tie favored pick (S or R) [default S]", TIE_FAVORED)
+    ADVANTAGE_FAVORED = prompt_for_string("Advantage favored pick (A=advantage, S=server, R=receiver)", ADVANTAGE_FAVORED)
     
     print("\nLoading combined.csv for Monte Carlo analysis...")
     df = pd.read_csv('combined.csv')
@@ -655,7 +674,8 @@ def main():
           f"of {GAMES_PER_SIMULATION} games each...")
     print(f"(Initial Bankroll={INITIAL_BANKROLL}, Stake={INITIAL_STAKE}, "
           f"ServerOdds={SERVER_ODDS}, ReceiverOdds={RECEIVER_ODDS}, "
-          f"ServerBetMultiplier={SERVER_BET_MULTIPLIER}, ReceiverBetMultiplier={RECEIVER_BET_MULTIPLIER})\n")
+          f"MaxBet={MAX_BET_ABSOLUTE}, S-BetMult={SERVER_BET_MULTIPLIER}, R-BetMult={RECEIVER_BET_MULTIPLIER}, "
+          f"Sequence={INITIAL_SEQUENCE}, TieFavored={TIE_FAVORED}, AdvantageFavored={ADVANTAGE_FAVORED})\n")
     
     final_bankrolls = []
     total_profits = []
