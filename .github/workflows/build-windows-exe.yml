@@ -1,0 +1,79 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:  # Allows manual triggering from GitHub UI
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller numpy pandas matplotlib scipy tqdm
+
+    - name: Add resource path function to app.py
+      shell: pwsh
+      run: |
+        # Check if the function already exists in the file
+        $content = Get-Content -Path current_app/app.py -Raw
+        if ($content -notmatch "def resource_path\(") {
+          # Create the insertion content
+          $insertion = @"
+
+import os
+import sys
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+"@
+          # Find the position after the imports
+          $lastImport = (Select-String -Path current_app/app.py -Pattern "^import|^from" | Select-Object -Last 1).LineNumber
+          
+          # Get the file content as an array of lines
+          $lines = Get-Content -Path current_app/app.py
+          
+          # Insert our code after the last import line
+          $newContent = $lines[0..$lastImport] + $insertion + $lines[($lastImport+1)..($lines.Count-1)]
+          
+          # Write the modified content back to the file
+          $newContent | Set-Content -Path current_app/app.py
+        }
+
+    - name: Update CSV path in app.py
+      shell: pwsh
+      run: |
+        # Replace the CSV loading line with the resource_path version
+        (Get-Content -Path current_app/app.py) -replace "df = pd\.read_csv\('combined\.csv'\)", "df = pd.read_csv(resource_path('combined.csv'))" | Set-Content -Path current_app/app.py
+
+    - name: Build with PyInstaller
+      working-directory: current_app
+      run: |
+        pyinstaller --onefile --add-data "combined.csv;." app.py --name "TennisPointByPoint"
+
+    - name: Upload executable
+      uses: actions/upload-artifact@v3
+      with:
+        name: TennisPointByPoint
+        path: current_app/dist/TennisPointByPoint.exe
+        retention-days: 30
