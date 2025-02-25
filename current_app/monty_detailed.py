@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-
-import os
-import sys
-
-def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller"""
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-
-    return os.path.join(base_path, relative_path)
-
 """
 monty_detailed.py
 
@@ -1012,7 +998,7 @@ def main():
         ADVANTAGE_FAVORED = adv_input
     
     print("\nLoading combined.csv for Monte Carlo analysis...")
-    df = pd.read_csv(resource_path('combined.csv'))
+    df = pd.read_csv('combined.csv')
     df['date'] = pd.to_datetime(df['date'], format="%d-%b-%y", dayfirst=True, errors='coerce')
     
     print(f"\nRunning Baseline Simulation with initial settings...\n"
